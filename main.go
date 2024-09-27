@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	//YT API package
 )
 
 func main() {

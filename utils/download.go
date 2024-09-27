@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kkdai/youtube/v2"
+	"github.com/kkdai/youtube/v2" //YT API package
 )
 
 func DownloadAndConvert(input, outputDir string) error {
