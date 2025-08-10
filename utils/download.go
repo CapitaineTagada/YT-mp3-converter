@@ -3,13 +3,11 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/kkdai/youtube/v2" //YT API package
 )
 
 func DownloadAndConvert(input, outputDir string) error {
@@ -20,67 +18,52 @@ func DownloadAndConvert(input, outputDir string) error {
 		return fmt.Errorf("failed to extract video ID: %w", err)
 	}
 
-	// Initialize YouTube API client
-	client := youtube.Client{}
+	// Temp name of the file
+	tmpFile := filepath.Join(outputDir, videoID+".tmp")
+	mp3File := filepath.Join(outputDir, videoID+".mp3")
 
-	// Fetch video metadata
-	fmt.Println("Fetching video metadata...")
-	video, err := client.GetVideo(videoID)
-	if err != nil {
-		return fmt.Errorf("failed to fetch video metadata: %w", err)
+	// Download only the audio with yt-dlp in m4a format (without conversion)
+	fmt.Println("Downloading audio stream with yt-dlp...")
+	cmd := exec.Command("yt-dlp",
+		"--no-playlist",
+		"-f", "bestaudio",
+		"-o", tmpFile,
+		input,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("yt-dlp download error: %w", err)
 	}
 
-	// Get audio formats available in the video
-	formats := video.Formats.WithAudioChannels()
-	if len(formats) == 0 {
-		return fmt.Errorf("no audio formats found")
-	}
-
-	// Select the first available format with audio
-	format := formats[0]
-
-	// Clean the video title to use it as a valid file name
-	cleanTitle := CleanFileName(video.Title)
-	downloadedFile := filepath.Join(outputDir, cleanTitle+".tmp")
-	mp3File := filepath.Join(outputDir, cleanTitle+".mp3")
-
-	// Download the audio
-	fmt.Println("Downloading audio stream...")
-	stream, _, err := client.GetStream(video, &format)
-	if err != nil {
-		return fmt.Errorf("failed to get stream: %w", err)
-	}
-	defer stream.Close()
-
-	// Create a file to store the downloaded audio
-	out, err := os.Create(downloadedFile)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer out.Close()
-
-	// Copy the stream data to the file
-	_, err = io.Copy(out, stream)
-	if err != nil {
-		return fmt.Errorf("failed to download audio: %w", err)
-	}
-	out.Close()
-
-	// Convert the downloaded file to MP3 format
+	// Convert to mp3 with ffmpeg
 	fmt.Println("Converting to MP3...")
-	err = ConvertToMp3(downloadedFile, mp3File)
+	err = ConvertToMp3(tmpFile, mp3File)
 	if err != nil {
 		return fmt.Errorf("failed to convert to MP3: %w", err)
 	}
 
-	// Remove the temporary downloaded file
-	err = os.Remove(downloadedFile)
-	if err != nil {
+	// Remove temp file
+	if err := os.Remove(tmpFile); err != nil {
 		fmt.Printf("Warning: Could not remove temporary file: %v\n", err)
 	}
 
 	fmt.Printf("Successfully downloaded and converted to MP3: %s\n", mp3File)
 	return nil
+}
+
+func CleanYouTubeURL(url string) string {
+	// Si on trouve un "&list=", on garde juste la partie avant
+	if strings.Contains(url, "&list=") {
+		parts := strings.Split(url, "&list=")
+		url = parts[0]
+	}
+	// Supprime aussi "&start_radio=" et tout autre paramètre résiduel
+	if strings.Contains(url, "&") {
+		parts := strings.Split(url, "&")
+		url = parts[0]
+	}
+	return url
 }
 
 func ExtractVideoID(input string) (string, error) {
